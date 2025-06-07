@@ -21,7 +21,6 @@
     let isGridMode = false;
     let gridContainer = null;
     let contextMenu = null;
-    let rightClickedLink = null;
 
     // Storage keys
     const STORAGE_KEY = 'multiVideoUrls';
@@ -568,16 +567,16 @@
             return;
         }
 
-        // Recreate the grid with remaining videos
-        createGrid();
+        // Update the grid with remaining videos (preserves playback)
+        updateGrid();
     }
 
-    // Create main grid
+    // Create main grid (only for initial creation)
     function createGrid() {
-        // Save current video states before recreating grid
+        // Only create if grid doesn't exist
         if (gridContainer) {
-            saveVideoStates();
-            document.body.removeChild(gridContainer);
+            updateGrid();
+            return;
         }
 
         gridContainer = document.createElement('div');
@@ -595,6 +594,62 @@
         setTimeout(() => {
             restoreVideoStates();
         }, 100); // Small delay to ensure videos are loaded
+    }
+
+    // Update existing grid (incremental updates to preserve video playback)
+    function updateGrid() {
+        if (!gridContainer) {
+            createGrid();
+            return;
+        }
+
+        const existingBoxes = gridContainer.querySelectorAll('.video-box');
+        const existingUrls = Array.from(existingBoxes).map(box => {
+            const video = box.querySelector('video, iframe');
+            return video ? video.src : '';
+        });
+
+        // Find URLs that need to be removed
+        const urlsToRemove = existingUrls.filter(url => !videoUrls.includes(url));
+
+        // Remove video boxes for URLs that are no longer in the list
+        urlsToRemove.forEach(urlToRemove => {
+            const boxToRemove = Array.from(existingBoxes).find(box => {
+                const video = box.querySelector('video, iframe');
+                return video && video.src === urlToRemove;
+            });
+            if (boxToRemove) {
+                gridContainer.removeChild(boxToRemove);
+            }
+        });
+
+        // Find new URLs that need to be added
+        const newUrls = videoUrls.filter(url => !existingUrls.includes(url));
+
+        // Add new video boxes for new URLs
+        newUrls.forEach(url => {
+            const index = videoUrls.indexOf(url);
+            const box = createVideoBox(url, index);
+            gridContainer.appendChild(box);
+        });
+
+        // Update indices and titles for all remaining boxes
+        const allBoxes = gridContainer.querySelectorAll('.video-box');
+        allBoxes.forEach((box, actualIndex) => {
+            box.dataset.index = actualIndex;
+            const title = box.querySelector('.video-title');
+            if (title) {
+                const video = box.querySelector('video, iframe');
+                const url = video ? video.src : '';
+                title.textContent = `Video ${actualIndex + 1}: ${getUrlDomain(url)}`;
+            }
+
+            // Update remove button to use correct index
+            const removeBtn = box.querySelector('.remove-btn');
+            if (removeBtn) {
+                removeBtn.onclick = () => removeVideoBox(actualIndex);
+            }
+        });
     }
 
     // Create main controls
@@ -827,7 +882,7 @@
                         if (!isGridMode) {
                             createMainControls();
                         }
-                        createGrid();
+                        updateGrid(); // Use updateGrid instead of createGrid to preserve playback
                     }
                 } else {
                     // For regular tabs, just update the button
@@ -874,7 +929,6 @@
                             e.stopImmediatePropagation();
 
                             const linkUrl = link.href || link.getAttribute('href');
-                            rightClickedLink = linkUrl;
 
                             // Create context menu immediately
                             createContextMenu(e.pageX, e.pageY, linkUrl);
